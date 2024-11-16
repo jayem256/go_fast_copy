@@ -1,4 +1,4 @@
-# Go Fast Copy - A fast file transfer over TCP using parallel LZ4 compression
+# Go Fast Copy - Fast file transfer over TCP using parallel LZ4 compression
 
 ## For when you gotta Go fast!
 This repository provides simple client and server tools written in **Go** for the purpose of enabling fast file transfers over single TCP stream. File content is compressed by client using **LZ4** on the fly and decompressed by receiving end before persisting it on mass storage. The server application is simple single user tool with optional **AES-128 or 256** encryption for authentication and privacy when transferring files over untrusted networks.
@@ -52,4 +52,5 @@ client -k RikSNWp98uiHRYBlJcEzqaL0ucxj6F07
 Go Fast Copy is using following 3rd party libraries:
 
 [_Golang argparse_ by Alexey Kamenskiy (MIT license)](https://github.com/akamensky/argparse)
+
 [_lz4 compression in pure Go_ by Pierre Curto (BSD-3-Clause license)](https://github.com/pierrec/lz4)
