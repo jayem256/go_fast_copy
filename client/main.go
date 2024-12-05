@@ -127,9 +127,10 @@ func main() {
 			channels := worker.StartWorkers(*workers, crypto)
 			comms.StartChunkStream(*frame, channels)
 
-			comp, total := worker.GetChunkStats()
+			comp, total, origSize, compSize := worker.GetChunkStats()
 			fmt.Println("Sent all data in",
 				time.Since(begin), "with", comp, "/", total, "chunks compressed")
+			fmt.Println("Original size:", humanReadableSize(origSize), "Compressed size:", humanReadableSize(compSize))
 
 			fmt.Println("Waiting for server to confirm")
 			// EOF negotiation with server.
@@ -151,5 +152,27 @@ func main() {
 	} else {
 		fmt.Println(err.Error())
 		os.Exit(1)
+	}
+}
+
+// humanReadableSize converts file size into a human-readable from.
+// FIXME: This probably should be moved somewhere else
+func humanReadableSize(size uint32) string {
+	const (
+		_  = iota
+		KB = 1 << (10 * iota) // 1024
+		MB                    // 1048576
+		GB                    // 1073741824
+	)
+
+	switch {
+	case size > GB:
+		return fmt.Sprintf("%.2f GB", float32(size)/GB)
+	case size > MB:
+		return fmt.Sprintf("%.2f MB", float32(size)/MB)
+	case size > KB:
+		return fmt.Sprintf("%.2f kB", float32(size)/KB)
+	default:
+		return fmt.Sprintf("%d B", size)
 	}
 }
