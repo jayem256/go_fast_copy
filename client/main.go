@@ -127,9 +127,10 @@ func main() {
 			channels := worker.StartWorkers(*workers, crypto)
 			comms.StartChunkStream(*frame, channels)
 
-			comp, total := worker.GetChunkStats()
+			comp, total, origSize, compSize := worker.GetChunkStats()
 			fmt.Println("Sent all data in",
 				time.Since(begin), "with", comp, "/", total, "chunks compressed")
+			fmt.Println("Original size: ", origSize, "Compressed size: ", compSize)
 
 			fmt.Println("Waiting for server to confirm")
 			// EOF negotiation with server.

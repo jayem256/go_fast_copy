@@ -10,6 +10,8 @@ import (
 var file *fileio.FileBuffer
 var compressedChunks atomic.Uint32
 var chunksTotal atomic.Uint32
+var dataTotal atomic.Uint32
+var compressedData atomic.Uint32
 
 type uncompressedChunk struct {
 	seq  uint32
@@ -20,16 +22,21 @@ type uncompressedChunk struct {
 func StartFileReader(filename string, numworkers, chunksize int) error {
 	compressedChunks.Store(0)
 	chunksTotal.Store(0)
+	dataTotal.Store(0)
+	compressedData.Store(0)
 	file = new(fileio.FileBuffer)
 	return file.NewReader(filename, chunksize*1024, numworkers)
 }
 
-// GetChunkStats returns compressed:total chunk count so far
-func GetChunkStats() (int, int) {
+// GetChunkStats returns compressed:total chunk count so far and data:compressedData
+func GetChunkStats() (int, int, uint32, uint32) {
 	comp := compressedChunks.Load()
 	total := chunksTotal.Load()
 
-	return int(comp), int(total)
+	data := dataTotal.Load()
+	compData := compressedData.Load()
+
+	return int(comp), int(total), data, compData
 }
 
 // StartWorkers starts workers for compressing raw chunks from file
@@ -47,8 +54,10 @@ func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 			for chunk := range in {
 				var isCompressed uint16
 
+				dataTotal.Add(uint32(len(chunk.data)))
 				// Compress chunk if possible.
 				processed, compressed := fileio.CompressChunk(chunk.data)
+				compressedData.Add(uint32(len(processed)))
 				processed = crypto.Encrypt(processed)
 
 				if compressed {
