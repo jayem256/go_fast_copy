@@ -19,6 +19,11 @@ Besides of workers, another consideration for performance is chunk size. Both cl
 
 Additionally the client has `-j` command line argument which you may use if your network interface has jumbo frames enabled. By using it the client will attempt to send bigger TCP frames, which can potentially increase throughput. The client also allows specifying DSCP/TOS using `-d #value` in case your network has QoS classification for traffic. **NOTE** that on _Windows_ operating systems by default the argument may not have any effect. In such case please refer to your OS documentation on how to enable overriding DSCP. On _Linux_ systems it should just work as most things usually do.
 
+To enable Multipath TCP you can set the `-m` flag on both client and server. Make sure your OS supports MPTCP 
+and your network settings are configured in such manner that you can make use of it. On most modern _Linux_ 
+distros it is most likely enabled by default. Please refer to your OS documentation for more. Actual performance 
+implications of using MPTCP may greatly vary and it's not a given that you will see much in terms of scaling.
+
 ## Usage
 Minimal usage for server requires specifying root folder for storing received files to. This is done with the `-r #path` command line argument.
 
