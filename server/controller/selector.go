@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"go_fast_copy/networking"
 	"go_fast_copy/networking/opcode"
@@ -21,20 +22,23 @@ var wqlen int
 var folder string
 
 // StartListening binds new listening socket
-func StartListening(key, path, addr string, blocksize, numworkers, queue int) {
+func StartListening(key, path, addr string, blocksize, numworkers, queue int, mptcp bool) {
 	chunksize = blocksize * 1024
 	workers = numworkers
 	wqlen = queue
 	folder = filepath.Clean(path) + string(os.PathSeparator)
 
-	res, err := net.ResolveTCPAddr("tcp4", addr)
+	_, err := net.ResolveTCPAddr("tcp4", addr)
 
 	if err != nil {
 		panic(err)
 	}
 
+	lc := new(net.ListenConfig)
+	// Set MPTCP.
+	lc.SetMultipathTCP(mptcp)
 	// Listen for incoming connections.
-	l, err := net.ListenTCP("tcp4", res)
+	l, err := lc.Listen(context.Background(), "tcp", addr)
 
 	if err != nil {
 		fmt.Println("Could not bind listening socket on " + addr)
@@ -47,10 +51,10 @@ func StartListening(key, path, addr string, blocksize, numworkers, queue int) {
 	fmt.Println("Listening on " + addr)
 
 	for {
-		// Listen for an incoming connection.
-		conn, err := l.AcceptTCP()
+		// Handle incoming connection.
+		conn, err := l.Accept()
 		// Set TCP_NODELAY to always immediately send.
-		conn.SetNoDelay(true)
+		conn.(*net.TCPConn).SetNoDelay(true)
 
 		if err != nil {
 			fmt.Println("Failed to establish incoming connection")

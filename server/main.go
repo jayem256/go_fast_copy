@@ -19,6 +19,7 @@ func main() {
 	pass := args.String("k", "key", &argparse.Options{Required: false, Help: "Encryption key (16 or 32 characters). Enables AES 128 or 256 encryption"})
 	bind := args.String("l", "listen", &argparse.Options{Required: false, Help: "Listen on address",
 		Default: "0.0.0.0"})
+	mptcp := args.Flag("m", "mptcp", &argparse.Options{Help: "Enable Multipath TCP"})
 	port := args.Int("p", "port", &argparse.Options{Required: false, Help: "Listening port",
 		Default: constants.DEFAULT_PORT})
 	queue := args.Int("q", "queue", &argparse.Options{Required: false, Help: "Write queue length",
@@ -45,5 +46,5 @@ func main() {
 
 	bindTo := *bind + ":" + strconv.Itoa(*port)
 
-	server.StartListening(*pass, *path, bindTo, *chunk, *workers, *queue)
+	server.StartListening(*pass, *path, bindTo, *chunk, *workers, *queue, *mptcp)
 }

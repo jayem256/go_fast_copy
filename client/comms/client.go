@@ -15,22 +15,27 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-var socket *net.TCPConn
+var socket net.Conn
 var crypto *networking.Crypto
 
 // Connect opens TCP connection to target host address
-func Connect(address string, dscp int) error {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", address)
+func Connect(address string, dscp int, mptcp bool) error {
+	_, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
 		return err
 	}
-	conn, err := net.DialTCP("tcp", nil, tcpAddr)
+	dial := new(net.Dialer)
+	// Set MPTCP.
+	dial.SetMultipathTCP(mptcp)
+	// Connect to host.
+	conn, err := dial.Dial("tcp", address)
+
 	if err != nil {
 		return err
 	}
 	socket = conn
 	// Set TCP_NODELAY to always immediately send.
-	socket.SetNoDelay(true)
+	socket.(*net.TCPConn).SetNoDelay(true)
 	// Set DSCP. NOTE: On Windows by default it will not apply the value.
 	ipv4.NewConn(conn).SetTOS(dscp)
 

@@ -27,6 +27,7 @@ func main() {
 	file := args.String("f", "file", &argparse.Options{Required: true, Help: "File path"})
 	frame := args.Flag("j", "jumbo", &argparse.Options{Help: "Enable jumbo frames"})
 	pass := args.String("k", "key", &argparse.Options{Required: false, Help: "Encryption key (16 or 32 characters). Enables AES 128 or 256 encryption"})
+	mptcp := args.Flag("m", "mptcp", &argparse.Options{Help: "Enable Multipath TCP"})
 	omit := args.Flag("o", "omit", &argparse.Options{Help: "Omit checksum calculation"})
 	port := args.Int("p", "port", &argparse.Options{Required: false, Help: "Target port",
 		Default: constants.DEFAULT_PORT})
@@ -66,7 +67,7 @@ func main() {
 	addr := *bind + ":" + strconv.Itoa(*port)
 
 	// Connect to host.
-	err = comms.Connect(addr, *dscp)
+	err = comms.Connect(addr, *dscp, *mptcp)
 
 	if err == nil {
 		fmt.Println("Connected to", addr)
