@@ -47,7 +47,7 @@ func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 
 	// Start workers.
 	for i := 0; i < numworkers; i++ {
-		out := make(chan []byte)
+		out := make(chan []byte, 3)
 		channels[i] = out
 
 		go func(in chan *uncompressedChunk, out chan []byte) {
