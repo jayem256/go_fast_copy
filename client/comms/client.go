@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/net/ipv4"
 )
@@ -187,56 +188,79 @@ func StartChunkStream(jumbo bool, channels []chan []byte) {
 		frameSize = constants.JUMBO_TCP_FRAME_SIZE
 	}
 	frame := make([]byte, 0, frameSize)
+	lastWork := time.Now()
 	for {
 		closed := 0
+		var didWork bool
 		for _, inpChan := range channels {
-			msg, open := <-inpChan
-
-			if !open {
-				closed = closed + 1
-			}
-			if msg == nil {
-				continue
-			}
-			if len(frame)+len(msg) <= frameSize {
-				frame = append(frame, msg...)
-			} else {
-				olen := len(msg)
-				ptr := 0
-				for {
-					remaining, full := appendPartial(frameSize, frame, msg[ptr:])
-					ptr = olen - remaining
-
-					// Frame is full or all of chunk data has been consumed.
-					_, err := socket.Write(full)
-
-					if err != nil {
-						panic(err)
-					}
-
-					// Prepare next frame.
-					frame = make([]byte, 0, frameSize)
-
-					if remaining == 0 {
-						break
-					}
-				}
-			}
-			if len(frame) == frameSize {
-				_, err := socket.Write(frame)
-				if err != nil {
-					panic(err)
-				}
-				frame = make([]byte, 0, frameSize)
-			}
-
+			concatenated, closeInc, ready := processCompletedChunkChannel(frame, frameSize, inpChan)
+			frame = concatenated
+			closed += closeInc
+			didWork = didWork || ready
 		}
 		if closed == len(channels) {
 			break
 		}
+		if didWork {
+			lastWork = time.Now()
+		}
+		// If there's no work to do, pause busy looping for a moment.
+		if time.Since(lastWork) > time.Millisecond*10 {
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
 	if len(frame) > 0 {
 		socket.Write(frame)
+	}
+}
+
+// processCompletedChunkChannel performs non-blocking read on worker channels and sends data if available.
+// Return value is current buffer including concatenated bytes, increment for # of closed channels and
+// boolean for whether the channel had anything to consume.
+func processCompletedChunkChannel(frame []byte, frameSize int, chonker chan []byte) ([]byte, int, bool) {
+	select {
+	case msg, open := <-chonker:
+		if msg == nil {
+			return frame, 1, true
+		}
+		if len(frame)+len(msg) <= frameSize {
+			frame = append(frame, msg...)
+		} else {
+			olen := len(msg)
+			ptr := 0
+			for {
+				remaining, full := appendPartial(frameSize, frame, msg[ptr:])
+				ptr = olen - remaining
+
+				// Frame is full or all of chunk data has been consumed.
+				_, err := socket.Write(full)
+
+				if err != nil {
+					panic(err)
+				}
+
+				// Prepare next frame.
+				frame = make([]byte, 0, frameSize)
+
+				if remaining == 0 {
+					break
+				}
+			}
+		}
+		if len(frame) == frameSize {
+			_, err := socket.Write(frame)
+			if err != nil {
+				panic(err)
+			}
+			frame = make([]byte, 0, frameSize)
+		}
+		var closed int
+		if !open {
+			closed = 1
+		}
+		return frame, closed, true
+	default:
+		return frame, 0, false
 	}
 }
 
