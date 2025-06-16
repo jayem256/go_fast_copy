@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"go_fast_copy/fileio"
 	"go_fast_copy/networking"
 	"go_fast_copy/networking/opcode"
@@ -29,14 +30,37 @@ func StartFileReader(filename string, numworkers, chunksize int) error {
 }
 
 // GetChunkStats returns compressed:total chunk count so far and data:compressedData
-func GetChunkStats() (int, int, uint32, uint32) {
+func GetChunkStats() (int, int, string) {
 	comp := compressedChunks.Load()
 	total := chunksTotal.Load()
 
 	data := dataTotal.Load()
 	compData := compressedData.Load()
 
-	return int(comp), int(total), data, compData
+	compStats := "Original size: " + humanReadableSize(data) + " Compressed size: " + humanReadableSize(compData)
+
+	return int(comp), int(total), compStats
+}
+
+// humanReadableSize converts file size into a human-readable form.
+func humanReadableSize(size uint32) string {
+	const (
+		_  = iota
+		KB = 1 << (10 * iota) // 1024
+		MB                    // 1048576
+		GB                    // 1073741824
+	)
+
+	switch {
+	case size > GB:
+		return fmt.Sprintf("%.2f GB", float32(size)/GB)
+	case size > MB:
+		return fmt.Sprintf("%.2f MB", float32(size)/MB)
+	case size > KB:
+		return fmt.Sprintf("%.2f kB", float32(size)/KB)
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
 }
 
 // StartWorkers starts workers for compressing raw chunks from file
