@@ -20,8 +20,9 @@ func main() {
 	args := argparse.NewParser("client", constants.Title)
 
 	bind := args.String("a", "address", &argparse.Options{Required: true, Help: "Target host address"})
-	chunk := args.Int("c", "chunksize", &argparse.Options{Required: false, Help: "File I/O chunk size in KB (1-8192)",
-		Default: constants.DEFAULT_FILE_CHUNK_SIZE})
+	chunk := args.Int("c", "chunksize", &argparse.Options{Required: false, Help: "File I/O chunk size in KB " +
+		"(" + strconv.Itoa(constants.MIN_CLIENT_CHUNK_SIZE) + "-" +
+		strconv.Itoa(constants.MAX_CLIENT_CHUNK_SIZE) + ")", Default: constants.DEFAULT_FILE_CHUNK_SIZE})
 	dscp := args.Int("d", "dscp", &argparse.Options{Required: false, Help: "DSCP field for QoS",
 		Default: constants.DEFAULT_DSCP})
 	file := args.String("f", "file", &argparse.Options{Required: true, Help: "File path"})
@@ -86,10 +87,13 @@ func main() {
 		fileName := strings.TrimSpace(*file)
 
 		// 8MB chunks the limit.
-		if *chunk > 8192 {
-			*chunk = 8192
-		} else if *chunk < 1 {
-			*chunk = 1
+		if *chunk > constants.MAX_CLIENT_CHUNK_SIZE {
+			*chunk = constants.MAX_CLIENT_CHUNK_SIZE
+			fmt.Println("Chunk size above maximum. Using " + strconv.Itoa(*chunk))
+		} else if *chunk < constants.MIN_CLIENT_CHUNK_SIZE {
+			// 64KB chunks minimum.
+			*chunk = constants.MIN_CLIENT_CHUNK_SIZE
+			fmt.Println("Chunk size below minimum. Using " + strconv.Itoa(*chunk))
 		}
 
 		err = worker.StartFileReader(fileName, *workers, *chunk)
