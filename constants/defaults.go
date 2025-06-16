@@ -8,5 +8,5 @@ const (
 	DEFAULT_NUM_WORKERS     = 2    // LZ4 worker threads
 	FILE_WRITE_QUEUE        = 10   // Queued chunks before blocking on file writes
 	DEFAULT_DSCP            = 0x0A // QoS for high throughput
-	MAX_OOC                 = 32   // Maximum number of buffered out-of-order chunks
+	MAX_OOC                 = 256  // Maximum number of buffered out-of-order chunks
 )
