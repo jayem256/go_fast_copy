@@ -12,13 +12,13 @@ type ChunkProcessor struct {
 	forks       []chan *UnprocessedChunk
 	next        int
 	mux         *ChunkMuxer
-	fioComplete chan string
+	fioComplete chan []byte
 }
 
 // NewFile prepares file writer
-func (s *ChunkProcessor) NewFile(filename string, bufferSize, qlen int) {
+func (s *ChunkProcessor) NewFile(filename string, bufferSize, qlen int, sha bool) {
 	s.file = new(fileio.FileBuffer)
-	err := s.file.NewWriter(filename, bufferSize, qlen)
+	err := s.file.NewWriter(filename, bufferSize, qlen, sha)
 	s.mux = new(ChunkMuxer)
 	if err != nil {
 		panic(err)
@@ -78,7 +78,7 @@ func (s *ChunkProcessor) ProcessNextChunk(chunk *UnprocessedChunk) {
 }
 
 // Stop ends all forks
-func (s *ChunkProcessor) Stop() string {
+func (s *ChunkProcessor) Stop() []byte {
 	for _, fork := range s.forks {
 		close(fork)
 	}

@@ -116,7 +116,7 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, bl
 
 		// Start writer and workers.
 		writer = new(worker.ChunkProcessor)
-		writer.NewFile(filename, blocksize, wqlen)
+		writer.NewFile(filename, blocksize, wqlen, packet.Flags == 2)
 		writer.StartForks(forks, crypto)
 	} else {
 		fmt.Println(err)
@@ -130,15 +130,7 @@ func endFileTransfer(conn net.Conn, packet *networking.Packet) {
 	err := networking.DecodePayload(packet.Payload, &end, crypto)
 
 	// Wait for file writer to complete.
-	fileName := writer.Stop()
-
-	var hash []byte
-
-	if packet.Flags == 1 {
-		hash = fileio.GetFileChecksumCRC32(fileName)
-	} else if packet.Flags == 2 {
-		hash = fileio.GetFileChecksumSHA256(fileName)
-	}
+	hash := writer.Stop()
 
 	if err != nil {
 		conn.Close()
