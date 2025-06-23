@@ -1,6 +1,8 @@
 package fileio
 
 import (
+	"go_fast_copy/constants"
+
 	"github.com/pierrec/lz4/v4"
 )
 
@@ -25,20 +27,21 @@ func DecompressChunk(chunk []byte) []byte {
 
 // uncompress uncompresses chunk and returns resulting slice of uncompressed bytes
 func uncompress(block []byte) []byte {
-	buffer := make([]byte, 10485760)
+	buffer := make([]byte, constants.MAX_CLIENT_CHUNK_SIZE*1024)
 	actual, err := lz4.UncompressBlock(block, buffer)
 	if err != nil {
-		panic(err)
+		panic("protocol error: client sent data which uncompressed exceeds the maximum allowed size")
 	}
 	return buffer[:actual]
 }
 
 // compress compresses chunk and returns resulting chunk and # of bytes compressed if any
 func compress(block []byte) (int, []byte) {
-	buffer := make([]byte, 10485760)
-	compressed, err := lz4.CompressBlock(block, buffer, nil)
+	buffer := make([]byte, lz4.CompressBlockBound(len(block)))
+	var c lz4.Compressor
+	compressed, err := c.CompressBlock(block, buffer)
 	if err != nil {
-		panic(err)
+		return 0, block
 	}
 	return compressed, buffer
 }
