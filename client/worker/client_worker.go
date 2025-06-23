@@ -11,8 +11,8 @@ import (
 var file *fileio.FileBuffer
 var compressedChunks atomic.Uint32
 var chunksTotal atomic.Uint32
-var dataTotal atomic.Uint32
-var compressedData atomic.Uint32
+var dataTotal atomic.Uint64
+var compressedData atomic.Uint64
 
 type uncompressedChunk struct {
 	seq  uint32
@@ -43,7 +43,7 @@ func GetChunkStats() (int, int, string) {
 }
 
 // humanReadableSize converts file size into a human-readable form.
-func humanReadableSize(size uint32) string {
+func humanReadableSize(size uint64) string {
 	const (
 		_  = iota
 		KB = 1 << (10 * iota) // 1024
@@ -78,10 +78,10 @@ func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 			for chunk := range in {
 				var isCompressed uint16
 
-				dataTotal.Add(uint32(len(chunk.data)))
+				dataTotal.Add(uint64(len(chunk.data)))
 				// Compress chunk if possible.
 				processed, compressed := fileio.CompressChunk(chunk.data)
-				compressedData.Add(uint32(len(processed)))
+				compressedData.Add(uint64(len(processed)))
 				processed = crypto.Encrypt(processed)
 
 				if compressed {
