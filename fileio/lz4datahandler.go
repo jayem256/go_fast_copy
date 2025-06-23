@@ -1,7 +1,7 @@
 package fileio
 
 import (
-	"github.com/pierrec/lz4"
+	"github.com/pierrec/lz4/v4"
 )
 
 // CompressChunk attempts to compress a chunk in LZ4 and either returns original or compressed chunk
