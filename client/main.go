@@ -144,8 +144,12 @@ func main() {
 			if ack {
 				fmt.Println("Server confirmed file has been synced")
 			} else {
-				fmt.Println("File transfer may not have completed or data may be corrupted")
-				os.Exit(2)
+				if *omit {
+					fmt.Println("Omitting checksum verification. File integrity unknown.")
+				} else {
+					fmt.Println("File transfer may not have completed or data may be corrupted")
+					os.Exit(2)
+				}
 			}
 		} else {
 			fmt.Println(err.Error())
