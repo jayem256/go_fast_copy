@@ -1,6 +1,9 @@
 package comms
 
 import (
+	"archive/tar"
+	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"go_fast_copy/constants"
@@ -114,17 +117,26 @@ func Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
 			Flags:  hashingMethod, // 0: disabled, 1: crc32, 2: sha256
 		},
 	}
-	fileInfo := &networking.StartFileTransfer{
-		FileName: [128]byte{},
-		FileHash: [32]byte{},
-	}
 
-	copy(fileInfo.FileHash[:], hash)
-	for i, ch := range file {
-		fileInfo.FileName[i] = byte(ch)
-	}
+	buffer := new(bytes.Buffer)
+	tarra := tar.NewWriter(buffer)
+	defer tarra.Close()
 
-	fileTransfer.Payload = networking.PayloadToBytes(fileInfo, crypto)
+	// Write tar header to buffer.
+	tarra.WriteHeader(&tar.Header{
+		Format:   tar.FormatPAX,
+		Typeflag: tar.TypeReg,
+		Name:     file,
+		PAXRecords: map[string]string{
+			constants.PAXAttr: hex.EncodeToString(hash),
+		},
+	})
+
+	tarHdrBytes := buffer.Bytes()
+	if crypto != nil {
+		tarHdrBytes = crypto.Encrypt(tarHdrBytes)
+	}
+	fileTransfer.Payload = tarHdrBytes
 
 	out, _ := networking.PacketToBytes(&fileTransfer)
 	socket.Write(out)
@@ -149,14 +161,10 @@ func EndFileTransfer(file string, hash []byte, hashingMethod uint8) bool {
 	}
 
 	eof := &networking.EndFileTransfer{
-		FileName: [128]byte{},
 		Checksum: [32]byte{},
 	}
 
 	copy(eof.Checksum[:], hash)
-	for i, ch := range file {
-		eof.FileName[i] = byte(ch)
-	}
 
 	end.Payload = networking.PayloadToBytes(eof, crypto)
 

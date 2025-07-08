@@ -1,8 +1,11 @@
 package server
 
 import (
+	"archive/tar"
 	"bytes"
+	"encoding/hex"
 	"fmt"
+	"go_fast_copy/constants"
 	"go_fast_copy/fileio"
 	"go_fast_copy/networking"
 	"go_fast_copy/networking/opcode"
@@ -70,11 +73,18 @@ func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 
 // startFileTransfer handles response to file transfer request
 func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, blocksize, forks, wqlen int) {
-	var start networking.StartFileTransfer
-	err := networking.DecodePayload(packet.Payload, &start, crypto)
+	tarHdrBytes := packet.Payload
+	if crypto != nil {
+		tarHdrBytes = crypto.Decrypt(tarHdrBytes)
+	}
+
+	hdrb := bytes.NewBuffer(tarHdrBytes)
+	tarra := tar.NewReader(hdrb)
+	// Read tar header.
+	header, err := tarra.Next()
 
 	if err == nil {
-		filename := path + string(bytes.Trim(start.FileName[:], "\x00"))
+		filename := path + header.Name
 		fmt.Println("Received client request to start transfer for:", filename)
 
 		resp := networking.Packet{
@@ -88,18 +98,16 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, bl
 		if packet.Flags > 0 {
 			// File with same name already exists.
 			if _, err = os.Stat(filename); err == nil {
-				var hash [32]byte
+				var hash []byte
 				if packet.Flags == 1 {
 					// Use CRC32 to check if file is identical.
-					crc := fileio.GetFileChecksumCRC32(filename)
-					copy(hash[:], crc)
+					hash = fileio.GetFileChecksumCRC32(filename)
 				} else if packet.Flags == 2 {
 					// Use SHA256 to check if file is identical.
-					sha := fileio.GetFileChecksumSHA256(filename)
-					copy(hash[:], sha)
+					hash = fileio.GetFileChecksumSHA256(filename)
 				}
 				// File with same name and content exists. No need to transfer it.
-				if start.FileHash == hash {
+				if header.PAXRecords[constants.PAXAttr] == hex.EncodeToString(hash) {
 					resp.Flags = 2
 				}
 			}
@@ -145,7 +153,6 @@ func endFileTransfer(conn net.Conn, packet *networking.Packet) {
 		},
 	}
 	eft := &networking.EndFileTransfer{
-		FileName: end.FileName,
 		Checksum: [32]byte{},
 	}
 	copy(eft.Checksum[:], hash)

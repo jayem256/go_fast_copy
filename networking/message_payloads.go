@@ -11,12 +11,6 @@ type AuthBlock struct {
 	// Followed by len * byte payload.
 }
 
-// StartFileTransfer is payload of opcode 2 request
-type StartFileTransfer struct {
-	FileName [128]byte // File name
-	FileHash [32]byte  // CRC32/SHA256 checksum
-}
-
 // DataStreamChunk opcode 3 describes an individual chunk in TCP stream
 type DataStreamChunk struct {
 	Sequence    uint32 // Sequence number of the chunk (starts from 1)
@@ -27,6 +21,5 @@ type DataStreamChunk struct {
 
 // EndFileTransfer opcode 4 contains file checksum for comparison
 type EndFileTransfer struct {
-	FileName [128]byte // File name
-	Checksum [32]byte  // CRC32/SHA256 checksum
+	Checksum [32]byte // CRC32/SHA256 checksum
 }
