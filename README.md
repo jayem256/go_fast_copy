@@ -17,12 +17,14 @@ By default the client is set to use 4 workers for doing the compression (and enc
 
 Besides of workers, another consideration for performance is chunk size. Both client and server have the option `-c #size` to specify chunk size in **KB**. For both of them the default is **256KB**. On client side the parameter adjusts how big chunks are read from file at once and also how big chunks get compressed and ultimately sent to server. The parameter allows going up to 8MB chunks but what determines optimal size is storage and how compressible the data is. Bigger chunks may yield better performance but this is not universally true. On server side the parameter adjusts how big blocks get written to file at a time. The server does not need to commit full chunks at once so it's decoupled from size of chunk sent by client.
 
-Additionally the client has `-j` command line argument which you may use if your network interface has jumbo frames enabled. By using it the client will attempt to send bigger TCP frames, which can potentially increase throughput. The client also allows specifying DSCP/TOS using `-d #value` in case your network has QoS classification for traffic. **NOTE** that on _Windows_ operating systems by default the argument may not have any effect. In such case please refer to your OS documentation on how to enable overriding DSCP. On _Linux_ systems it should just work as most things usually do.
+The client allows specifying DSCP/TOS using `-d #value` in case your network has QoS classification for traffic. **NOTE** that on _Windows_ operating systems by default the argument may not have any effect. In such case please refer to your OS documentation on how to enable overriding DSCP. On _Linux_ systems it should just work as most things usually do.
 
 To enable Multipath TCP you can set the `-m` flag on both client and server. Make sure your OS supports MPTCP 
 and your network settings are configured in such manner that you can make use of it. On most modern _Linux_ 
 distros it is most likely enabled by default. Please refer to your OS documentation for more. Actual performance 
 implications of using MPTCP may greatly vary and it's not a given that you will see much in terms of scaling.
+Based on testing you could potentially see better results by doing some tuning such as increasing TCP window.
+Please refer to your OS documentation for how to configure MPTCP for throughput.
 
 ## Usage
 Minimal usage for server requires specifying root folder for storing received files to. This is done with the `-r #path` command line argument.
