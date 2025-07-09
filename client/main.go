@@ -26,7 +26,6 @@ func main() {
 	dscp := args.Int("d", "dscp", &argparse.Options{Required: false, Help: "DSCP field for QoS",
 		Default: constants.DEFAULT_DSCP})
 	file := args.String("f", "file", &argparse.Options{Required: true, Help: "File path"})
-	frame := args.Flag("j", "jumbo", &argparse.Options{Help: "Enable jumbo frames"})
 	pass := args.String("k", "key", &argparse.Options{Required: false, Help: "Encryption key (16 or 32 characters). Enables AES 128 or 256 encryption"})
 	mptcp := args.Flag("m", "mptcp", &argparse.Options{Help: "Enable Multipath TCP"})
 	omit := args.Flag("o", "omit", &argparse.Options{Help: "Omit checksum calculation"})
@@ -130,7 +129,7 @@ func main() {
 
 			// Start sending chunks.
 			channels := worker.StartWorkers(*workers, crypto)
-			comms.StartChunkStream(*frame, channels)
+			comms.StartChunkStream(channels)
 
 			comp, total, compStats := worker.GetChunkStats()
 			fmt.Println("Sent all data in",

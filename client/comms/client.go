@@ -189,20 +189,14 @@ func EndFileTransfer(file string, hash []byte, hashingMethod uint8) bool {
 }
 
 // StartChunkStream streams processed chunk data to server
-func StartChunkStream(jumbo bool, channels []chan []byte) {
-	frameSize := constants.DEFAULT_TCP_FRAME_SIZE
-	if jumbo {
-		// Attempt to send larger TCP frames.
-		frameSize = constants.JUMBO_TCP_FRAME_SIZE
-	}
-	frame := make([]byte, 0, frameSize)
+func StartChunkStream(channels []chan []byte) {
 	lastWork := time.Now()
 	for {
 		closed := 0
 		var didWork bool
 		for _, inpChan := range channels {
-			concatenated, closeInc, ready := processCompletedChunkChannel(frame, frameSize, inpChan)
-			frame = concatenated
+			closeInc, ready := processCompletedChunkChannel(inpChan)
+			//frame = concatenated
 			closed += closeInc
 			didWork = didWork || ready
 		}
@@ -217,70 +211,33 @@ func StartChunkStream(jumbo bool, channels []chan []byte) {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	if len(frame) > 0 {
-		socket.Write(frame)
-	}
 }
 
 // processCompletedChunkChannel performs non-blocking read on worker channels and sends data if available.
-// Return value is current buffer including concatenated bytes, increment for # of closed channels and
-// boolean for whether the channel had anything to consume.
-func processCompletedChunkChannel(frame []byte, frameSize int, chonker chan []byte) ([]byte, int, bool) {
+// Return value is increment for # of closed channels and boolean whether channel produced anything.
+func processCompletedChunkChannel(chonker chan []byte) (int, bool) {
 	select {
 	case msg, open := <-chonker:
 		if msg == nil {
-			return frame, 1, true
+			return 1, true
 		}
-		if len(frame)+len(msg) <= frameSize {
-			frame = append(frame, msg...)
-		} else {
-			olen := len(msg)
-			ptr := 0
-			for {
-				remaining, full := appendPartial(frameSize, frame, msg[ptr:])
-				ptr = olen - remaining
 
-				// Frame is full or all of chunk data has been consumed.
-				_, err := socket.Write(full)
+		// Frame is full or all of chunk data has been consumed.
+		_, err := socket.Write(msg)
 
-				if err != nil {
-					panic(err)
-				}
-
-				// Prepare next frame.
-				frame = make([]byte, 0, frameSize)
-
-				if remaining == 0 {
-					break
-				}
-			}
+		if err != nil {
+			panic(err)
 		}
-		if len(frame) == frameSize {
-			_, err := socket.Write(frame)
-			if err != nil {
-				panic(err)
-			}
-			frame = make([]byte, 0, frameSize)
-		}
+
 		var closed int
 		if !open {
 			closed = 1
 		}
-		return frame, closed, true
-	default:
-		return frame, 0, false
-	}
-}
 
-// appendPartial appends as much as it can and return number of bytes remaining
-func appendPartial(max int, frame, bytes []byte) (int, []byte) {
-	space := max - len(frame)
-	if len(bytes) > space {
-		frame = append(frame, bytes[0:space]...)
-		return len(bytes) - space, frame
+		return closed, true
+	default:
+		return 0, false
 	}
-	frame = append(frame, bytes...)
-	return 0, frame
 }
 
 // Close closes socket
