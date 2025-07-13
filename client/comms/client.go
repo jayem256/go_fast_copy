@@ -19,11 +19,13 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-var socket net.Conn
-var crypto *networking.Crypto
+type Client struct {
+	socket net.Conn
+	crypto *networking.Crypto
+}
 
 // Connect opens TCP connection to target host address
-func Connect(address string, dscp int, mptcp bool) error {
+func (c *Client) Connect(address string, dscp int, mptcp bool) error {
 	_, err := net.ResolveTCPAddr("tcp", address)
 	if err != nil {
 		return err
@@ -37,9 +39,9 @@ func Connect(address string, dscp int, mptcp bool) error {
 	if err != nil {
 		return err
 	}
-	socket = conn
+	c.socket = conn
 	// Set TCP_NODELAY to always immediately send.
-	socket.(*net.TCPConn).SetNoDelay(true)
+	c.socket.(*net.TCPConn).SetNoDelay(true)
 	// Set DSCP. NOTE: On Windows by default it will not apply the value.
 	ipv4.NewConn(conn).SetTOS(dscp)
 
@@ -47,13 +49,13 @@ func Connect(address string, dscp int, mptcp bool) error {
 }
 
 // ServerEhlo reads server greeting and nonce
-func ServerEhlo() []byte {
-	crypto = new(networking.Crypto).WithKeyNonce(nil, nil)
-	ehlo := readResponse(opcode.EHLO)
+func (c *Client) ServerEhlo() []byte {
+	c.crypto = new(networking.Crypto).WithKeyNonce(nil, nil)
+	ehlo := c.readResponse(opcode.EHLO)
 	if ehlo != nil {
 		// Ehlo from server contains nonce.
 		var content networking.EHLO
-		networking.DecodePayload(ehlo.Payload, &content, crypto)
+		networking.DecodePayload(ehlo.Payload, &content, c.crypto)
 
 		nonce := make([]byte, 16)
 		copy(nonce, content.Nonce[:])
@@ -64,10 +66,10 @@ func ServerEhlo() []byte {
 }
 
 // Authenticate sends handshake to server
-func Authenticate(key string, nonce []byte) (*networking.Crypto, error) {
+func (c *Client) Authenticate(key string, nonce []byte) (*networking.Crypto, error) {
 	if key != "" {
 		// Init AES with key and nonce.
-		crypto = new(networking.Crypto).WithKeyNonce([]byte(key), nonce)
+		c.crypto = new(networking.Crypto).WithKeyNonce([]byte(key), nonce)
 	}
 
 	auth := networking.Packet{
@@ -82,33 +84,33 @@ func Authenticate(key string, nonce []byte) (*networking.Crypto, error) {
 		auth.Flags = 1
 		// PSK is the common denominator.
 		secret := []byte(key)
-		secret = crypto.Encrypt(secret)
+		secret = c.crypto.Encrypt(secret)
 
 		// Additional auth payload is required.
 		block := &networking.AuthBlock{
 			BlockLen: uint16(len(secret)),
 		}
-		auth.Payload = networking.PayloadToBytes(block, crypto)
+		auth.Payload = networking.PayloadToBytes(block, c.crypto)
 		out, _ := networking.PacketToBytes(&auth)
 		out = append(out, secret...)
 
-		socket.Write(out)
+		c.socket.Write(out)
 	} else {
 		out, _ := networking.PacketToBytes(&auth)
-		socket.Write(out)
+		c.socket.Write(out)
 	}
 
-	resp := readResponse(opcode.HANDSHAKE)
+	resp := c.readResponse(opcode.HANDSHAKE)
 	if resp != nil {
 		if resp.Flags != 1 {
 			return nil, errors.New("authentication failed")
 		}
 	}
-	return crypto, nil
+	return c.crypto, nil
 }
 
 // Initiate tells server to prepare to receive file of given name
-func Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
+func (c *Client) Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
 	file = filepath.Base(file)
 
 	fileTransfer := networking.Packet{
@@ -133,16 +135,16 @@ func Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
 	})
 
 	tarHdrBytes := buffer.Bytes()
-	if crypto != nil {
-		tarHdrBytes = crypto.Encrypt(tarHdrBytes)
+	if c.crypto != nil {
+		tarHdrBytes = c.crypto.Encrypt(tarHdrBytes)
 	}
 	fileTransfer.Payload = tarHdrBytes
 
 	out, _ := networking.PacketToBytes(&fileTransfer)
-	socket.Write(out)
+	c.socket.Write(out)
 
 	// Get server response.
-	resp := readResponse(opcode.BEGINFILETRANSFER)
+	resp := c.readResponse(opcode.BEGINFILETRANSFER)
 
 	if resp != nil {
 		return resp.Flags
@@ -152,7 +154,7 @@ func Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
 }
 
 // EndFileTransfer tells server current session is terminating
-func EndFileTransfer(file string, hash []byte, hashingMethod uint8) bool {
+func (c *Client) EndFileTransfer(file string, hash []byte, hashingMethod uint8) bool {
 	end := networking.Packet{
 		Header: networking.Header{
 			Opcode: opcode.ENDFILETRANSFER,
@@ -166,18 +168,18 @@ func EndFileTransfer(file string, hash []byte, hashingMethod uint8) bool {
 
 	copy(eof.Checksum[:], hash)
 
-	end.Payload = networking.PayloadToBytes(eof, crypto)
+	end.Payload = networking.PayloadToBytes(eof, c.crypto)
 
 	out, _ := networking.PacketToBytes(&end)
-	socket.Write(out)
+	c.socket.Write(out)
 
 	// Wait for server ack.
-	resp := readResponse(opcode.ENDFILETRANSFER)
+	resp := c.readResponse(opcode.ENDFILETRANSFER)
 
 	if resp != nil {
 		if resp.Flags > 0 {
 			var end networking.EndFileTransfer
-			err := networking.DecodePayload(resp.Payload, &end, crypto)
+			err := networking.DecodePayload(resp.Payload, &end, c.crypto)
 			if err != nil {
 				return false
 			}
@@ -189,14 +191,13 @@ func EndFileTransfer(file string, hash []byte, hashingMethod uint8) bool {
 }
 
 // StartChunkStream streams processed chunk data to server
-func StartChunkStream(channels []chan []byte) {
+func (c *Client) StartChunkStream(channels []chan []byte) {
 	lastWork := time.Now()
 	for {
 		closed := 0
 		var didWork bool
 		for _, inpChan := range channels {
-			closeInc, ready := processCompletedChunkChannel(inpChan)
-			//frame = concatenated
+			closeInc, ready := c.processCompletedChunkChannel(inpChan)
 			closed += closeInc
 			didWork = didWork || ready
 		}
@@ -215,15 +216,14 @@ func StartChunkStream(channels []chan []byte) {
 
 // processCompletedChunkChannel performs non-blocking read on worker channels and sends data if available.
 // Return value is increment for # of closed channels and boolean whether channel produced anything.
-func processCompletedChunkChannel(chonker chan []byte) (int, bool) {
+func (c *Client) processCompletedChunkChannel(chonker chan []byte) (int, bool) {
 	select {
 	case msg, open := <-chonker:
 		if msg == nil {
 			return 1, true
 		}
 
-		// Frame is full or all of chunk data has been consumed.
-		_, err := socket.Write(msg)
+		_, err := c.socket.Write(msg)
 
 		if err != nil {
 			panic(err)
@@ -241,16 +241,16 @@ func processCompletedChunkChannel(chonker chan []byte) (int, bool) {
 }
 
 // Close closes socket
-func Close() {
-	socket.Close()
+func (c *Client) Close() {
+	c.socket.Close()
 }
 
 // readResponse reads full message from stream and matches it to opcode
-func readResponse(opcode uint8) *networking.Packet {
+func (c *Client) readResponse(opcode uint8) *networking.Packet {
 	msg := make([]byte, 4)
 
 	// Read message header first.
-	_, err := io.ReadFull(socket, msg)
+	_, err := io.ReadFull(c.socket, msg)
 
 	if err != nil {
 		fmt.Println("Lost connection")
@@ -272,7 +272,7 @@ func readResponse(opcode uint8) *networking.Packet {
 		payloadLen := header.Len - 4
 
 		payload = make([]byte, payloadLen)
-		len, err := io.ReadFull(socket, payload)
+		len, err := io.ReadFull(c.socket, payload)
 
 		if len != int(payloadLen) || err != nil {
 			fmt.Println("Recv len mismatch: " + strconv.Itoa(len) +

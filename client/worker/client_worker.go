@@ -8,11 +8,13 @@ import (
 	"sync/atomic"
 )
 
-var file *fileio.FileBuffer
-var compressedChunks atomic.Uint32
-var chunksTotal atomic.Uint32
-var dataTotal atomic.Uint64
-var compressedData atomic.Uint64
+type CompressingReader struct {
+	file             *fileio.FileBuffer
+	compressedChunks atomic.Uint32
+	chunksTotal      atomic.Uint32
+	dataTotal        atomic.Uint64
+	compressedData   atomic.Uint64
+}
 
 type uncompressedChunk struct {
 	seq  uint32
@@ -20,22 +22,22 @@ type uncompressedChunk struct {
 }
 
 // StartFileReader opens new file handle for reading
-func StartFileReader(filename string, numworkers, chunksize int) error {
-	compressedChunks.Store(0)
-	chunksTotal.Store(0)
-	dataTotal.Store(0)
-	compressedData.Store(0)
-	file = new(fileio.FileBuffer)
-	return file.NewReader(filename, chunksize*1024, numworkers)
+func (w *CompressingReader) StartFileReader(filename string, numworkers, chunksize int) error {
+	w.compressedChunks.Store(0)
+	w.chunksTotal.Store(0)
+	w.dataTotal.Store(0)
+	w.compressedData.Store(0)
+	w.file = new(fileio.FileBuffer)
+	return w.file.NewReader(filename, chunksize*1024, numworkers)
 }
 
 // GetChunkStats returns compressed:total chunk count so far and data:compressedData
-func GetChunkStats() (int, int, string) {
-	comp := compressedChunks.Load()
-	total := chunksTotal.Load()
+func (w *CompressingReader) GetChunkStats() (int, int, string) {
+	comp := w.compressedChunks.Load()
+	total := w.chunksTotal.Load()
 
-	data := dataTotal.Load()
-	compData := compressedData.Load()
+	data := w.dataTotal.Load()
+	compData := w.compressedData.Load()
 
 	compStats := "Original size: " + humanReadableSize(data) + " Compressed size: " + humanReadableSize(compData)
 
@@ -64,7 +66,7 @@ func humanReadableSize(size uint64) string {
 }
 
 // StartWorkers starts workers for compressing raw chunks from file
-func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
+func (w *CompressingReader) StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 	chunkStream := make(chan *uncompressedChunk, numworkers)
 
 	channels := make([]chan []byte, numworkers)
@@ -78,14 +80,14 @@ func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 			for chunk := range in {
 				var isCompressed uint16
 
-				dataTotal.Add(uint64(len(chunk.data)))
+				w.dataTotal.Add(uint64(len(chunk.data)))
 				// Compress chunk if possible.
 				processed, compressed := fileio.CompressChunk(chunk.data)
-				compressedData.Add(uint64(len(processed)))
+				w.compressedData.Add(uint64(len(processed)))
 				processed = crypto.Encrypt(processed)
 
 				if compressed {
-					compressedChunks.Add(1)
+					w.compressedChunks.Add(1)
 					isCompressed = 1
 				}
 				// Prepare full message of chunk header + data for streaming over TCP.
@@ -113,7 +115,7 @@ func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 	go func() {
 		var chunkSeq uint32 = 1
 
-		fileChunks := file.StartReading()
+		fileChunks := w.file.StartReading()
 
 		// Get raw chunks from file reader.
 		for raw := range fileChunks {
@@ -124,7 +126,7 @@ func StartWorkers(numworkers int, crypto *networking.Crypto) []chan []byte {
 			}
 			// Increment sequence number.
 			chunkSeq = chunkSeq + 1
-			chunksTotal.Add(1)
+			w.chunksTotal.Add(1)
 		}
 
 		close(chunkStream)

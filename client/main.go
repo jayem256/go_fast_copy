@@ -8,9 +8,9 @@ import (
 	"go_fast_copy/constants"
 	"go_fast_copy/fileio"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/akamensky/argparse"
@@ -49,8 +49,10 @@ func main() {
 		}
 	}
 
+	fileName := filepath.Clean(*file)
+
 	// Get file info.
-	finfo, err := os.Stat(*file)
+	finfo, err := os.Stat(fileName)
 	if err != nil {
 		fmt.Println(err.Error())
 		os.Exit(1)
@@ -65,6 +67,8 @@ func main() {
 	debug.SetGCPercent(666)
 
 	addr := *bind + ":" + strconv.Itoa(*port)
+
+	comms := new(comms.Client)
 
 	// Connect to host.
 	err = comms.Connect(addr, *dscp, *mptcp)
@@ -83,8 +87,6 @@ func main() {
 		}
 		fmt.Println("Handshake ok")
 
-		fileName := strings.TrimSpace(*file)
-
 		// 8MB chunks the limit.
 		if *chunk > constants.MAX_CLIENT_CHUNK_SIZE {
 			*chunk = constants.MAX_CLIENT_CHUNK_SIZE
@@ -95,6 +97,7 @@ func main() {
 			fmt.Println("Chunk size below minimum. Using " + strconv.Itoa(*chunk))
 		}
 
+		worker := new(worker.CompressingReader)
 		err = worker.StartFileReader(fileName, *workers, *chunk)
 
 		if err == nil {
@@ -117,12 +120,18 @@ func main() {
 			// Request file transfer.
 			status := comms.Initiate(fileName, hash, method)
 
-			if status == 0 {
+			switch status {
+			case 0:
 				fmt.Println("Server not ready to receive the file")
 				os.Exit(1)
-			} else if status == 2 {
+			case 1:
+				fmt.Println("Server is ready to accept the file")
+			case 2:
 				fmt.Println("Server already has identical file. Omitting!")
 				os.Exit(0)
+			default:
+				fmt.Println("Server did not accept the file")
+				os.Exit(1)
 			}
 
 			begin := time.Now()
