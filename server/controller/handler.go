@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"go_fast_copy/constants"
 	"go_fast_copy/fileio"
@@ -11,8 +12,11 @@ import (
 	"go_fast_copy/networking/opcode"
 	"go_fast_copy/server/worker"
 	"io"
+	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -72,7 +76,7 @@ func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 }
 
 // startFileTransfer handles response to file transfer request
-func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, blocksize, forks, wqlen int) {
+func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string, blocksize, forks, wqlen int) {
 	tarHdrBytes := packet.Payload
 	if crypto != nil {
 		tarHdrBytes = crypto.Decrypt(tarHdrBytes)
@@ -84,8 +88,8 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, bl
 	header, err := tarra.Next()
 
 	if err == nil {
-		filename := path + header.Name
-		fmt.Println("Received client request to start transfer for:", filename)
+		localizedPath, err := filepath.Localize(header.Name)
+		filename := rootPath + localizedPath
 
 		resp := networking.Packet{
 			Header: networking.Header{
@@ -94,21 +98,50 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, bl
 			},
 		}
 
-		// File checksum enabled.
-		if packet.Flags > 0 {
-			// File with same name already exists.
-			if _, err = os.Stat(filename); err == nil {
-				var hash []byte
-				if packet.Flags == 1 {
-					// Use CRC32 to check if file is identical.
-					hash = fileio.GetFileChecksumCRC32(filename)
-				} else if packet.Flags == 2 {
-					// Use SHA256 to check if file is identical.
-					hash = fileio.GetFileChecksumSHA256(filename)
+		if err != nil {
+			resp.Flags = 3
+			fmt.Println("Invalid path requested:", filename)
+		} else {
+			fmt.Println("Received client request to start transfer for:", filename)
+
+			// Walk the path of light.
+			err = filepath.Walk(filepath.Dir(filename), func(path string, info fs.FileInfo, err error) error {
+				if !strings.HasPrefix(path, filepath.Clean(rootPath)) {
+					// We have strayed from the path of light.
+					return errors.New("invalid path " + path + ":" + rootPath)
 				}
-				// File with same name and content exists. No need to transfer it.
-				if header.PAXRecords[constants.PAXAttr] == hex.EncodeToString(hash) {
-					resp.Flags = 2
+				if err != nil {
+					if errors.Is(err, os.ErrNotExist) {
+						// Create the directory if it doesn't already exist.
+						return os.Mkdir(path, os.ModePerm)
+					} else {
+						return err
+					}
+				}
+				return nil
+			})
+
+			if err != nil {
+				resp.Flags = 3
+				fmt.Println(err.Error())
+			} else {
+				// File checksum enabled.
+				if packet.Flags > 0 {
+					// File with same name already exists.
+					if _, err = os.Stat(filename); err == nil {
+						var hash []byte
+						if packet.Flags == 1 {
+							// Use CRC32 to check if file is identical.
+							hash = fileio.GetFileChecksumCRC32(filename)
+						} else if packet.Flags == 2 {
+							// Use SHA256 to check if file is identical.
+							hash = fileio.GetFileChecksumSHA256(filename)
+						}
+						// File with same name and content exists. No need to transfer it.
+						if header.PAXRecords[constants.PAXAttr] == hex.EncodeToString(hash) {
+							resp.Flags = 2
+						}
+					}
 				}
 			}
 		}
@@ -118,6 +151,10 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, path string, bl
 
 		if resp.Flags == 2 {
 			fmt.Println("Identical file already exists locally. Omitting transfer!")
+			conn.Close()
+			return
+		} else if resp.Flags == 3 {
+			fmt.Println("Could not start transfer for requested file")
 			conn.Close()
 			return
 		}

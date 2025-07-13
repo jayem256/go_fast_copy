@@ -23,12 +23,23 @@ var folder string
 
 // StartListening binds new listening socket
 func StartListening(key, path, addr string, blocksize, numworkers, queue int, mptcp bool) {
+	var err error
 	chunksize = blocksize * 1024
 	workers = numworkers
 	wqlen = queue
 	folder = filepath.Clean(path) + string(os.PathSeparator)
 
-	_, err := net.ResolveTCPAddr("tcp4", addr)
+	fmt.Println(folder)
+
+	// Check path validity.
+	info, err := os.Stat(folder)
+
+	if err != nil || !info.IsDir() {
+		fmt.Println("Invalid root folder -", err.Error())
+		os.Exit(1)
+	}
+
+	_, err = net.ResolveTCPAddr("tcp4", addr)
 
 	if err != nil {
 		panic(err)
