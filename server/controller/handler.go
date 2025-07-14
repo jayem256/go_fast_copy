@@ -77,6 +77,18 @@ func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 
 // startFileTransfer handles response to file transfer request
 func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string, blocksize, forks, wqlen int) {
+	if writer != nil {
+		// Previous transfer has not completed.
+		out, _ := networking.PacketToBytes(&networking.Packet{
+			Header: networking.Header{
+				Opcode: packet.Opcode,
+				Flags:  0,
+			},
+		})
+		conn.Write(out)
+		return
+	}
+
 	tarHdrBytes := packet.Payload
 	if crypto != nil {
 		tarHdrBytes = crypto.Decrypt(tarHdrBytes)
@@ -89,6 +101,9 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string
 
 	if err == nil {
 		localizedPath, err := filepath.Localize(header.Name)
+		// Neither localize nor To/FromSlash seem to convert paths between OS formats.
+		localizedPath = strings.ReplaceAll(localizedPath, "\\", string(os.PathSeparator))
+		localizedPath = strings.ReplaceAll(localizedPath, "/", string(os.PathSeparator))
 		filename := rootPath + localizedPath
 
 		resp := networking.Packet{
@@ -151,7 +166,6 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string
 
 		if resp.Flags == 2 {
 			fmt.Println("Identical file already exists locally. Omitting transfer!")
-			conn.Close()
 			return
 		} else if resp.Flags == 3 {
 			fmt.Println("Could not start transfer for requested file")
@@ -209,7 +223,7 @@ func endFileTransfer(conn net.Conn, packet *networking.Packet) {
 	out, _ := networking.PacketToBytes(&resp)
 
 	conn.Write(out)
-	conn.Close()
+	writer = nil
 }
 
 // nextFileDataChunk handles processing of data chunks

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"golang.org/x/net/ipv4"
@@ -110,7 +111,20 @@ func (c *Client) Authenticate(key string, nonce []byte) (*networking.Crypto, err
 }
 
 // Initiate tells server to prepare to receive file of given name
-func (c *Client) Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
+func (c *Client) Initiate(root, file string, hash []byte, hashingMethod uint8) uint8 {
+	subfolder := ""
+
+	if len(root) > 0 {
+		dir := filepath.Dir(file)
+		if root != dir {
+			subfolder = filepath.Dir(file)[len(root)+1:]
+			subfolder = filepath.Clean(subfolder)
+			if !strings.HasSuffix(subfolder, string(os.PathSeparator)) {
+				subfolder += string(os.PathSeparator)
+			}
+		}
+	}
+
 	file = filepath.Base(file)
 
 	fileTransfer := networking.Packet{
@@ -128,7 +142,7 @@ func (c *Client) Initiate(file string, hash []byte, hashingMethod uint8) uint8 {
 	tarra.WriteHeader(&tar.Header{
 		Format:   tar.FormatPAX,
 		Typeflag: tar.TypeReg,
-		Name:     file,
+		Name:     subfolder + file,
 		PAXRecords: map[string]string{
 			constants.PAXAttr: hex.EncodeToString(hash),
 		},

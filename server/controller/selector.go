@@ -29,8 +29,6 @@ func StartListening(key, path, addr string, blocksize, numworkers, queue int, mp
 	wqlen = queue
 	folder = filepath.Clean(path) + string(os.PathSeparator)
 
-	fmt.Println(folder)
-
 	// Check path validity.
 	info, err := os.Stat(folder)
 
@@ -85,6 +83,8 @@ func StartListening(key, path, addr string, blocksize, numworkers, queue int, mp
 		handleRequest(conn)
 		// Reset crypto.
 		initCrypto("", nil)
+		// Reset authentication state.
+		authenticated = false
 
 		fmt.Println("Client disconnected")
 	}
@@ -190,7 +190,6 @@ func dispatcher(conn net.Conn, packet *networking.Packet) {
 				nextFileDataChunk(conn, packet)
 			case opcode.ENDFILETRANSFER:
 				endFileTransfer(conn, packet)
-				authenticated = false
 			default:
 				fmt.Println("Don't know what to do with message opcode " + strconv.Itoa(int(packet.Opcode)))
 			}
