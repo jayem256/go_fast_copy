@@ -41,6 +41,13 @@ To send file located in _C:\Generated\statistics.json_ to host at _192.168.1.1_ 
 client -a 192.168.1.1 -f C:\Generated\statistics.json
 ```
 
+Besides of sending individual files, you may also use recursive mode `-r #path` to send all contents inside directory including all subfolders and their contents.
+
+To send all files located in _/home/user/data_ to host at _10.0.0.1_ you would do the following:
+```
+client -a 10.0.0.1 -r /home/user/data
+```
+
 To enable AES 128 or 256 encryption you have to use the `-k #key` argument on both client and server to specify pre-shared key used in encryption. They key must be either 16 characters long for AES128 or 32 characters long for AES256.
 
 To enable _AES128_ you would enter matching key which is 16 characters in length:
