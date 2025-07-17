@@ -113,11 +113,14 @@ func main() {
 		}
 
 		if *recursive != "" {
+			var count int
 			// Recursively send all contents of a folder.
 			for _, file := range recursiveFileTree(path) {
 				transferFile(comms, *workers, *chunk, path, file, crypto, *omit, *sha)
+				count += 1
 				fmt.Println()
 			}
+			fmt.Println("Processed", count, "files in total")
 		} else {
 			// Send single file.
 			transferFile(comms, *workers, *chunk, "", path, crypto, *omit, *sha)
