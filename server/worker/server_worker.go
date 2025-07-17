@@ -8,7 +8,7 @@ import (
 
 // ChunkProcessor is responsible for starting workers and passing work
 type ChunkProcessor struct {
-	file        *fileio.FileBuffer
+	writer      fileio.FileWriter
 	forks       []chan *UnprocessedChunk
 	next        int
 	mux         *ChunkMuxer
@@ -16,20 +16,19 @@ type ChunkProcessor struct {
 }
 
 // NewFile prepares file writer
-func (s *ChunkProcessor) NewFile(filename string, bufferSize, qlen int, sha bool) {
-	s.file = new(fileio.FileBuffer)
-	err := s.file.NewWriter(filename, bufferSize, qlen, sha)
-	s.mux = new(ChunkMuxer)
-	if err != nil {
+func (s *ChunkProcessor) NewFile(factory fileio.IOFactory, filename string, bufferSize, qlen int, sha bool) {
+	s.writer = factory.NewWriter()
+	if err := s.writer.New(filename, bufferSize, qlen, sha); err != nil {
 		panic(err)
 	}
+	s.mux = new(ChunkMuxer)
 }
 
 // StartForks starts workers for processing chunks
 func (s *ChunkProcessor) StartForks(forkCount int, crypto *networking.Crypto) {
 	chunkProcessingQueues := make([]chan *UnprocessedChunk, 0, forkCount)
 	// Start file writing.
-	outChan, fioc := s.file.StartWriting()
+	outChan, fioc := s.writer.StartWriting()
 	s.fioComplete = fioc
 	// Start chunk muxer.
 	dcStreams := s.mux.Start(constants.MAX_OOC, outChan, forkCount)

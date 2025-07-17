@@ -157,7 +157,7 @@ func transferFile(comms *comms.Client, workers, chunk int, rootdir, fileName str
 	crypto *networking.Crypto, omit, sha bool) {
 
 	worker := new(worker.CompressingReader)
-	err := worker.StartFileReader(fileName, workers, chunk)
+	err := worker.StartFileReader(new(fileio.BufferedFactory), fileName, workers, chunk)
 
 	if err == nil {
 		fmt.Print("Starting file transfer for '", fileName, "' ")

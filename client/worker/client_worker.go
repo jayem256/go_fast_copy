@@ -9,7 +9,7 @@ import (
 )
 
 type CompressingReader struct {
-	file             *fileio.FileBuffer
+	reader           fileio.FileReader
 	compressedChunks atomic.Uint32
 	chunksTotal      atomic.Uint32
 	dataTotal        atomic.Uint64
@@ -22,13 +22,14 @@ type uncompressedChunk struct {
 }
 
 // StartFileReader opens new file handle for reading
-func (w *CompressingReader) StartFileReader(filename string, numworkers, chunksize int) error {
+func (w *CompressingReader) StartFileReader(factory fileio.IOFactory,
+	filename string, numworkers, chunksize int) error {
 	w.compressedChunks.Store(0)
 	w.chunksTotal.Store(0)
 	w.dataTotal.Store(0)
 	w.compressedData.Store(0)
-	w.file = new(fileio.FileBuffer)
-	return w.file.NewReader(filename, chunksize*1024, numworkers)
+	w.reader = factory.NewReader()
+	return w.reader.New(filename, chunksize*1024, numworkers)
 }
 
 // GetChunkStats returns compressed:total chunk count so far and data:compressedData
@@ -115,7 +116,7 @@ func (w *CompressingReader) StartWorkers(numworkers int, crypto *networking.Cryp
 	go func() {
 		var chunkSeq uint32 = 1
 
-		fileChunks := w.file.StartReading()
+		fileChunks := w.reader.StartReading()
 
 		// Get raw chunks from file reader.
 		for raw := range fileChunks {

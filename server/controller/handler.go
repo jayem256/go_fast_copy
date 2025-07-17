@@ -177,7 +177,7 @@ func (h *Handler) startFileTransfer(conn net.Conn, packet *networking.Packet, ro
 
 		// Start writer and workers.
 		h.writer = new(worker.ChunkProcessor)
-		h.writer.NewFile(filename, blocksize, wqlen, packet.Flags == 2)
+		h.writer.NewFile(new(fileio.BufferedFactory), filename, blocksize, wqlen, packet.Flags == 2)
 		h.writer.StartForks(forks, h.crypto)
 	} else {
 		fmt.Println(err)
