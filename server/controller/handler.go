@@ -130,7 +130,7 @@ func (h *Handler) startFileTransfer(conn net.Conn, packet *networking.Packet, ro
 				if err != nil {
 					if errors.Is(err, os.ErrNotExist) {
 						// Create the directory if it doesn't already exist.
-						return os.Mkdir(path, os.ModePerm)
+						return os.MkdirAll(path, os.ModePerm)
 					} else {
 						return err
 					}
