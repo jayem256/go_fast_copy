@@ -15,22 +15,26 @@ import (
 	"math/rand"
 )
 
-var authenticated bool
-var chunksize int
-var workers int
-var wqlen int
-var folder string
+type Server struct {
+	authenticated bool
+	chunksize     int
+	workers       int
+	wqlen         int
+	folder        string
+	handler       *Handler
+}
 
 // StartListening binds new listening socket
-func StartListening(key, path, addr string, blocksize, numworkers, queue int, mptcp bool) {
+func (s *Server) StartListening(key, path, addr string, blocksize, numworkers, queue int, mptcp bool) {
 	var err error
-	chunksize = blocksize * 1024
-	workers = numworkers
-	wqlen = queue
-	folder = filepath.Clean(path) + string(os.PathSeparator)
+	s.chunksize = blocksize * 1024
+	s.workers = numworkers
+	s.wqlen = queue
+	s.folder = filepath.Clean(path) + string(os.PathSeparator)
+	s.handler = new(Handler)
 
 	// Check path validity.
-	info, err := os.Stat(folder)
+	info, err := os.Stat(s.folder)
 
 	if err != nil || !info.IsDir() {
 		fmt.Println("Invalid root folder -", err.Error())
@@ -72,26 +76,26 @@ func StartListening(key, path, addr string, blocksize, numworkers, queue int, mp
 
 		fmt.Println("New connection from: " + conn.RemoteAddr().String())
 
-		authenticated = false
+		s.authenticated = false
 		// Generate new nonce for session.
-		nonce := generateNonce()
+		nonce := s.generateNonce()
 		// Send greeting with nonce.
-		sendEhlo(conn, nonce)
+		s.sendEhlo(conn, nonce)
 		// Enable encryption if in use.
-		initCrypto(key, nonce)
+		s.handler.initCrypto(key, nonce)
 		// Start handling client requests.
-		handleRequest(conn)
+		s.handleRequest(conn)
 		// Reset crypto.
-		initCrypto("", nil)
+		s.handler.initCrypto("", nil)
 		// Reset authentication state.
-		authenticated = false
+		s.authenticated = false
 
 		fmt.Println("Client disconnected")
 	}
 }
 
 // sendEhlo sends greeting message to client with optional nonce
-func sendEhlo(conn net.Conn, nonce []byte) {
+func (s *Server) sendEhlo(conn net.Conn, nonce []byte) {
 	ehlo := networking.Packet{
 		Header: networking.Header{
 			Opcode: opcode.EHLO,
@@ -102,13 +106,13 @@ func sendEhlo(conn net.Conn, nonce []byte) {
 		Nonce: [16]byte{},
 	}
 	copy(nonceBlock.Nonce[:], nonce)
-	ehlo.Payload = networking.PayloadToBytes(nonceBlock, crypto)
+	ehlo.Payload = networking.PayloadToBytes(nonceBlock, s.handler.crypto)
 	out, _ := networking.PacketToBytes(&ehlo)
 	conn.Write(out)
 }
 
 // generateNonce generates new nonce for session
-func generateNonce() []byte {
+func (s *Server) generateNonce() []byte {
 	nonce := make([]byte, 16)
 	// Generate nonce for this session.
 	randr := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -119,7 +123,7 @@ func generateNonce() []byte {
 }
 
 // handleRequest handles whole session
-func handleRequest(conn net.Conn) {
+func (s *Server) handleRequest(conn net.Conn) {
 	defer conn.Close()
 
 	for {
@@ -157,14 +161,14 @@ func handleRequest(conn net.Conn) {
 					} else {
 						packet.Payload = payload
 						// handle decoded message with payload.
-						dispatcher(conn, packet)
+						s.dispatcher(conn, packet)
 					}
 				} else {
 					// empty payload.
 					payload = make([]byte, 0)
 					packet.Payload = payload
 					// handle decoded message.
-					dispatcher(conn, packet)
+					s.dispatcher(conn, packet)
 				}
 			}
 		} else {
@@ -174,22 +178,22 @@ func handleRequest(conn net.Conn) {
 }
 
 // dispatcher determines what to do with incoming messages
-func dispatcher(conn net.Conn, packet *networking.Packet) {
+func (s *Server) dispatcher(conn net.Conn, packet *networking.Packet) {
 	if packet.Opcode == opcode.HANDSHAKE {
-		authenticated = handleHandshake(conn, packet)
-		if !authenticated {
+		s.authenticated = s.handler.handleHandshake(conn, packet)
+		if !s.authenticated {
 			fmt.Println("Authentication failed for client", conn.RemoteAddr().String())
 		}
 	} else {
 		// For messages other than authentication itself the connection must be authenticated.
-		if authenticated {
+		if s.authenticated {
 			switch packet.Opcode {
 			case opcode.BEGINFILETRANSFER:
-				startFileTransfer(conn, packet, folder, chunksize, workers, wqlen)
+				s.handler.startFileTransfer(conn, packet, s.folder, s.chunksize, s.workers, s.wqlen)
 			case opcode.NEXTCHUNK:
-				nextFileDataChunk(conn, packet)
+				s.handler.nextFileDataChunk(conn, packet)
 			case opcode.ENDFILETRANSFER:
-				endFileTransfer(conn, packet)
+				s.handler.endFileTransfer(conn, packet)
 			default:
 				fmt.Println("Don't know what to do with message opcode " + strconv.Itoa(int(packet.Opcode)))
 			}

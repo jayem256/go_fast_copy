@@ -20,23 +20,25 @@ import (
 	"time"
 )
 
-var writer *worker.ChunkProcessor
-var crypto *networking.Crypto
-var requireAuth bool
+type Handler struct {
+	writer      *worker.ChunkProcessor
+	crypto      *networking.Crypto
+	requireAuth bool
+}
 
 // initCrypto initializes encryption with given key and nonce
-func initCrypto(passphrase string, nonce []byte) {
-	requireAuth = !(passphrase == "")
+func (h *Handler) initCrypto(passphrase string, nonce []byte) {
+	h.requireAuth = !(passphrase == "")
 
-	if requireAuth {
-		crypto = new(networking.Crypto).WithKeyNonce([]byte(passphrase), nonce)
+	if h.requireAuth {
+		h.crypto = new(networking.Crypto).WithKeyNonce([]byte(passphrase), nonce)
 	} else {
-		crypto = new(networking.Crypto).WithKeyNonce(nil, nil)
+		h.crypto = new(networking.Crypto).WithKeyNonce(nil, nil)
 	}
 }
 
 // handleHandshake handles response to handshake request
-func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
+func (h *Handler) handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 	resp := networking.Packet{
 		Header: networking.Header{
 			Opcode: opcode.HANDSHAKE,
@@ -47,7 +49,7 @@ func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 	// Encryption is in use and authentication is required.
 	if packet.Flags == 1 {
 		var auth networking.AuthBlock
-		if networking.DecodePayload(packet.Payload, &auth, crypto) != nil {
+		if networking.DecodePayload(packet.Payload, &auth, h.crypto) != nil {
 			return false
 		}
 
@@ -62,10 +64,10 @@ func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 		conn.SetReadDeadline(time.Time{})
 
 		// Check if we could decrypt contents of the block with our key.
-		if !crypto.MatchSecret(crypto.Decrypt(block)) {
+		if !h.crypto.MatchSecret(h.crypto.Decrypt(block)) {
 			resp.Flags = 0
 		}
-	} else if requireAuth {
+	} else if h.requireAuth {
 		resp.Flags = 0
 	}
 
@@ -76,8 +78,8 @@ func handleHandshake(conn net.Conn, packet *networking.Packet) bool {
 }
 
 // startFileTransfer handles response to file transfer request
-func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string, blocksize, forks, wqlen int) {
-	if writer != nil {
+func (h *Handler) startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string, blocksize, forks, wqlen int) {
+	if h.writer != nil {
 		// Previous transfer has not completed.
 		out, _ := networking.PacketToBytes(&networking.Packet{
 			Header: networking.Header{
@@ -90,8 +92,8 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string
 	}
 
 	tarHdrBytes := packet.Payload
-	if crypto != nil {
-		tarHdrBytes = crypto.Decrypt(tarHdrBytes)
+	if h.crypto != nil {
+		tarHdrBytes = h.crypto.Decrypt(tarHdrBytes)
 	}
 
 	hdrb := bytes.NewBuffer(tarHdrBytes)
@@ -174,9 +176,9 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string
 		}
 
 		// Start writer and workers.
-		writer = new(worker.ChunkProcessor)
-		writer.NewFile(filename, blocksize, wqlen, packet.Flags == 2)
-		writer.StartForks(forks, crypto)
+		h.writer = new(worker.ChunkProcessor)
+		h.writer.NewFile(filename, blocksize, wqlen, packet.Flags == 2)
+		h.writer.StartForks(forks, h.crypto)
 	} else {
 		fmt.Println(err)
 		conn.Close()
@@ -184,12 +186,12 @@ func startFileTransfer(conn net.Conn, packet *networking.Packet, rootPath string
 }
 
 // endFileTransfer handles response to end file transfer request
-func endFileTransfer(conn net.Conn, packet *networking.Packet) {
+func (h *Handler) endFileTransfer(conn net.Conn, packet *networking.Packet) {
 	var end networking.EndFileTransfer
-	err := networking.DecodePayload(packet.Payload, &end, crypto)
+	err := networking.DecodePayload(packet.Payload, &end, h.crypto)
 
 	// Wait for file writer to complete.
-	hash := writer.Stop()
+	hash := h.writer.Stop()
 
 	if err != nil {
 		conn.Close()
@@ -207,7 +209,7 @@ func endFileTransfer(conn net.Conn, packet *networking.Packet) {
 		Checksum: [32]byte{},
 	}
 	copy(eft.Checksum[:], hash)
-	resp.Payload = networking.PayloadToBytes(eft, crypto)
+	resp.Payload = networking.PayloadToBytes(eft, h.crypto)
 
 	if packet.Flags > 0 {
 		if end.Checksum != eft.Checksum {
@@ -223,17 +225,17 @@ func endFileTransfer(conn net.Conn, packet *networking.Packet) {
 	out, _ := networking.PacketToBytes(&resp)
 
 	conn.Write(out)
-	writer = nil
+	h.writer = nil
 }
 
 // nextFileDataChunk handles processing of data chunks
-func nextFileDataChunk(conn net.Conn, packet *networking.Packet) {
+func (h *Handler) nextFileDataChunk(conn net.Conn, packet *networking.Packet) {
 	var chonk networking.DataStreamChunk
-	err := networking.DecodePayload(packet.Payload, &chonk, crypto)
+	err := networking.DecodePayload(packet.Payload, &chonk, h.crypto)
 
 	if err != nil {
 		conn.Close()
-		writer.Stop()
+		h.writer.Stop()
 		fmt.Println("Malformed chunk message from client. Ending file transfer.")
 		return
 	}
@@ -249,13 +251,13 @@ func nextFileDataChunk(conn net.Conn, packet *networking.Packet) {
 
 	if err != nil {
 		conn.Close()
-		writer.Stop()
+		h.writer.Stop()
 		fmt.Println("Incomplete chunk from client. Ending file transfer.")
 		return
 	}
 
 	// Have workers process the chunk.
-	writer.ProcessNextChunk(&worker.UnprocessedChunk{
+	h.writer.ProcessNextChunk(&worker.UnprocessedChunk{
 		Seq:        chonk.Sequence,
 		Compressed: chonk.Compression > 0,
 		Data:       chunkData,

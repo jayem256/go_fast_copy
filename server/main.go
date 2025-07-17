@@ -46,5 +46,5 @@ func main() {
 
 	bindTo := *bind + ":" + strconv.Itoa(*port)
 
-	server.StartListening(*pass, *path, bindTo, *chunk, *workers, *queue, *mptcp)
+	new(server.Server).StartListening(*pass, *path, bindTo, *chunk, *workers, *queue, *mptcp)
 }
